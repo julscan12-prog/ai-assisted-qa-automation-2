@@ -6,10 +6,13 @@ You are a senior QA engineer reviewing the feature described below.
 
 ## Task
 
-Create a detailed test plan for the [FEATURE NAME] feature
+Create a detailed test plan for the https://demo.playwright.dev/todomvc/
 
 ## Acceptance Criteria
 
+User can add a todo item to the list
+User can complete an item
+User can delete item from the list
 
 ## Requirements for the test plan
 
@@ -23,8 +26,6 @@ Create a detailed test plan for the [FEATURE NAME] feature
   - Preconditions
   - Steps (numbered)
   - Expected result
-  - Priority (High / Medium / Low)
-
   - Group by: Positive flows, Negative flows, Edge cases
 
 ## Output
@@ -32,3 +33,4 @@ Create a detailed test plan for the [FEATURE NAME] feature
 - Structured test plan in Markdown
 - Use real field names and values, not placeholders
 - At the end: list any ambiguities or gaps in the ACs
+- Save it in the TODO_MVC/ folder
