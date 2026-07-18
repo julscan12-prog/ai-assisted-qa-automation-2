@@ -29,8 +29,9 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
+    # TodoMVC only until Didaxis credentials are available as GitHub Actions secrets
     - name: Run Playwright tests
-      run: npx playwright test
+      run: npx playwright test tests/todo.spec.ts
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
