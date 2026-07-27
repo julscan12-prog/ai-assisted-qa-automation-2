@@ -1,8 +1,58 @@
 # DS-2 — Edit Existing Program Details (Test Plan Output)
 
+**Jira:** [DS-2](https://legionqaschool.atlassian.net/browse/DS-2) — *Edit existing program details*  
 **Feature:** Edit existing program details  
-**Scope:** Admin user — Programs page → edit icon → edit form  
-**Source:** DS-2_ticket_INPUT
+**Scope:** Admin user — Programs page (`/programs`) → `Edit {name}` icon → **Edit Program** modal  
+**Sources:** DS-2 Jira ACs, Confluence (Program Setup & Architecture Overview), live app exploration (Playwright / headless)
+
+---
+
+## Jira Acceptance Criteria (Source)
+
+```gherkin
+Scenario: Open program for editing
+  Given I am on the Programs page
+  And a program "Web Development 2026" exists
+  When I click the edit icon on "Web Development 2026"
+  Then I see the edit form pre-populated with the program's current data
+
+Scenario: Successfully edit a program name
+  Given I am editing "Web Development 2026"
+  When I change the Name to "Web Development 2026 - Updated"
+  And I click Save
+  Then the modal closes
+  And the program list immediately shows "Web Development 2026 - Updated"
+
+Scenario: Edit preserves unchanged fields
+  Given I am editing a program
+  When I only change the Description
+  And I click Save
+  Then the Name and other fields remain unchanged
+```
+
+---
+
+## Observed App Behavior (Live Exploration)
+
+| Area | Confluence / Jira expectation | Observed on https://test.didaxis.studio |
+|------|------------------------------|----------------------------------------|
+| Login | Admin access required | `Email`, `Password`, `Sign In` on `/login`; dotenv `DIDAXIS_EMAIL` / `DIDAXIS_PASSWORD` |
+| Programs page | Header + program table | `/programs` after login; **+ New Program** button visible for admin |
+| Edit control | ✏️ icon on program row | `Edit {program name}` button (exact accessible name) per row |
+| Edit modal | **Edit Program** heading, pre-populated fields | Dialog heading **Edit Program**; **Program Name**, **Description** textboxes; **Save**, **Cancel**, X close |
+| AI config | Collapsible section in create/edit modals | **AI Generation Config** section present in edit modal |
+| Save disabled | Save disabled when Program Name empty | Confirmed after clearing name; **Save** enabled when form opens with valid name (even without edits) |
+| Description | Optional | Can be cleared on edit; empty description row shows no description preview |
+| Name trim | Trim on submit | `"  Mobile Development 2026  "` stored as trimmed name in list |
+| Max length | Name max 100, Description max 500 (Confluence) | **Bug [DS-193](https://legionqaschool.atlassian.net/browse/DS-193)** — 101+ char names accepted on edit (TC-019); 501+ description rejected (TC-029 passes) |
+| Duplicate name | 400/409 + error (Confluence) | **Bug [DS-192](https://legionqaschool.atlassian.net/browse/DS-192)** — rename to existing name creates duplicate rows (TC-013) |
+| Double submit | Should update one program | Observed: double Save does not corrupt data (TC-015 passes) |
+| Case sensitivity | Unique per organization | **Bug [DS-194](https://legionqaschool.atlassian.net/browse/DS-194)** — case-variant renames allowed as distinct names (TC-024) |
+| Modal dismiss | X, Cancel, Escape, outside click | Cancel and Escape close edit modal without saving |
+| List refresh | Immediate update after mutation | List reflects name/description changes without manual refresh |
+| Unauthenticated | Redirect to login | Direct `/programs` navigates to `/login` |
+| API failure | Error shown, modal stays open | Simulated 500 on PUT/PATCH keeps modal open with entered name retained |
+| Permissions | Admin full CRUD; Editor can edit; Viewer read-only | Only admin credentials available — TC-011 requires viewer/editor accounts |
 
 ---
 
@@ -20,7 +70,7 @@
 2. Locate **Web Development 2026** in the program list.
 3. Click the **edit icon** on **Web Development 2026**.
 
-**Expected result:** The edit modal opens. **Program Name** shows `Web Development 2026`. **Description** shows `Full-stack web development program`.
+**Expected result:** **Edit Program** modal opens. **Program Name** shows `Web Development 2026`. **Description** shows `Full-stack web development program`.
 
 **Gherkin:**
 ```gherkin
@@ -317,7 +367,8 @@ Scenario: Unauthenticated user cannot edit programs
 ### TC-013 — Renaming a program to an existing program name is rejected
 
 **Preconditions:** Programs **Web Development 2026** and **Mobile Development 2026** both exist  
-**Priority:** High
+**Priority:** High  
+**Jira bug:** [DS-192](https://legionqaschool.atlassian.net/browse/DS-192)
 
 **Steps:**
 1. Open edit form for **Mobile Development 2026**.
@@ -446,63 +497,64 @@ Scenario: Minimum length Program Name is accepted on edit
 
 ---
 
-### TC-018 — Program Name at max length is saved correctly on edit
+### TC-018 — Program Name at max length (100) is saved correctly on edit
 
-**Preconditions:** Max length for **Program Name** is 255 characters; program **Max Length Source Program** exists  
+**Preconditions:** Max length per Confluence is 100 characters; program **Max Length Source Program** exists  
 **Priority:** Medium
 
 **Steps:**
 1. Open edit form for **Max Length Source Program**.
-2. Change **Program Name** to a string of exactly 255 characters (e.g. 255 × `x`).
+2. Change **Program Name** to a string of exactly 100 characters.
 3. Click **Save**.
 
-**Expected result:** Program is updated with the full 255-character name. No silent truncation without indication.
+**Expected result:** Program is updated with the full 100-character name. No silent truncation without indication.
 
 **Gherkin:**
 ```gherkin
 Scenario: Program Name at maximum length is accepted on edit
   Given I am editing "Max Length Source Program"
-  And the maximum Program Name length is 255 characters
-  When I change Program Name to a 255-character string
+  And the maximum Program Name length is 100 characters
+  When I change Program Name to a 100-character string
   And I click Save
   Then the modal closes
-  And the program list shows the program with the full 255-character name
+  And the program list shows the program with the full 100-character name
 ```
 
 ---
 
 ### TC-019 — Over-max Program Name cannot be saved on edit
 
-**Preconditions:** Max length for **Program Name** is 255 characters; user is editing **Web Development 2026**  
-**Priority:** Medium
+**Preconditions:** Max length per Confluence is 100 characters; user is editing **Web Development 2026**  
+**Priority:** Medium  
+**Jira bug:** [DS-193](https://legionqaschool.atlassian.net/browse/DS-193)
 
 **Steps:**
 1. Open edit form for **Web Development 2026**.
-2. Enter 256 characters in **Program Name**.
+2. Enter 101 characters in **Program Name**.
 3. Attempt to click **Save**.
 
-**Expected result:** Input is prevented or validation error shown; **Save** disabled or submit rejected. Original program unchanged.
+**Expected result (Confluence):** Input is prevented or validation error shown; **Save** disabled or submit rejected. Original program unchanged. **Observed:** 101+ char names accepted — document as product gap.
 
 **Gherkin:**
 ```gherkin
 Scenario: Program Name over maximum length is rejected on edit
   Given I am editing "Web Development 2026"
-  And the maximum Program Name length is 255 characters
-  When I change Program Name to a 256-character string
+  And the maximum Program Name length is 100 characters
+  When I change Program Name to a 101-character string
   Then the Save button is disabled or I see a validation error
   And the program list still shows "Web Development 2026"
 ```
 
 ---
 
-### TC-020 — Description at max length is saved correctly on edit
+### TC-020 — Description at max length (500) is saved correctly on edit
 
-**Preconditions:** Max length for **Description** is 1000 characters; program **Web Development 2026** exists  
+**Preconditions:** Max length per Confluence is 500 characters; program **Web Development 2026** exists  
 **Priority:** Low
 
 **Steps:**
 1. Open edit form for **Web Development 2026**.
-2. Change **Description** to a 1000-character string.
+2. Change **Description** to a 500-character string.
 3. Click **Save**.
 
 **Expected result:** Description is stored and displayed per UI rules.
@@ -511,11 +563,11 @@ Scenario: Program Name over maximum length is rejected on edit
 ```gherkin
 Scenario: Description at maximum length is accepted on edit
   Given I am editing "Web Development 2026"
-  And the maximum Description length is 1000 characters
-  When I change Description to a 1000-character string
+  And the maximum Description length is 500 characters
+  When I change Description to a 500-character string
   And I click Save
   Then the modal closes
-  And the program description is stored with the full 1000-character text
+  And the program description is stored with the full 500-character text
 ```
 
 ---
@@ -598,14 +650,15 @@ Scenario: Leading and trailing spaces in Program Name are trimmed on edit
 ### TC-024 — Case-variant duplicate name policy is applied consistently on edit
 
 **Preconditions:** Program **Web Development 2026** exists; user is editing **Mobile Development 2026**  
-**Priority:** Medium
+**Priority:** Medium  
+**Jira bug:** [DS-194](https://legionqaschool.atlassian.net/browse/DS-194)
 
 **Steps:**
 1. Open edit form for **Mobile Development 2026**.
-2. Change **Program Name** to `web development 2026`.
+2. Change **Program Name** to `web development 2026` (case variant of existing name).
 3. Click **Save**.
 
-**Expected result:** Behavior matches product rule: either rejected as duplicate or allowed as distinct — documented and consistent with create flow.
+**Expected result (Confluence):** Rejected as duplicate. **Observed:** Allowed as separate program — document as product gap.
 
 **Gherkin:**
 ```gherkin
@@ -654,7 +707,7 @@ Scenario: HTML and script content in fields is safely handled on edit
 
 **Steps:**
 1. Open edit form for **Long Name Source Program**.
-2. Change **Program Name** to a 200-character string.
+2. Change **Program Name** to a 99-character string (under 100 max).
 3. Clear **Description**.
 4. Click **Save**.
 
@@ -664,11 +717,11 @@ Scenario: HTML and script content in fields is safely handled on edit
 ```gherkin
 Scenario: Long Program Name with empty Description succeeds on edit
   Given I am editing "Long Name Source Program"
-  When I change Program Name to a 200-character string
+  When I change Program Name to a 99-character string
   And I clear the Description field
   And I click Save
   Then the modal closes
-  And the program list shows the program with the 200-character name
+  And the program list shows the program with the 99-character name
 ```
 
 ---
@@ -697,6 +750,54 @@ Scenario: Edit form correctly pre-populates empty Description
 
 ---
 
+### TC-028 — Edit modal exposes AI Generation Config section
+
+**Preconditions:** User has opened the edit form for an existing program  
+**Priority:** Low
+
+**Steps:**
+1. Open edit form for any program.
+2. Observe fields below **Description**.
+3. Expand **AI Generation Config**.
+
+**Expected result:** Collapsible section shows optional fields: Total Program Hours, Default Session Hours, Default Exam Hours, Target Audience, Focus Areas, Sync/Async Ratio. Program can still be saved without modifying them.
+
+**Gherkin:**
+```gherkin
+Scenario: Edit modal exposes optional AI Generation Config
+  Given I am editing an existing program
+  When I expand "AI Generation Config"
+  Then I see fields for Total Program Hours, Default Session Hours, and Default Exam Hours
+  And I can save the program without changing AI config fields
+```
+
+---
+
+### TC-029 — Description over max length (501) is rejected on edit
+
+**Preconditions:** Max length per Confluence is 500 characters; user is editing **Web Development 2026**  
+**Priority:** Medium
+
+**Steps:**
+1. Open edit form for **Web Development 2026**.
+2. Change **Description** to a 501-character string.
+3. Click **Save**.
+
+**Expected result:** Save fails or validation blocks submit. Modal stays open. Program description unchanged in list.
+
+**Gherkin:**
+```gherkin
+Scenario: Description over maximum length is rejected on edit
+  Given I am editing "Web Development 2026"
+  And the maximum Description length is 500 characters
+  When I change Description to a 501-character string
+  And I click Save
+  Then the program description is not updated
+  And the edit modal remains open or I see a validation error
+```
+
+---
+
 ## Traceability Matrix (AC → Test Cases)
 
 | Acceptance criteria | Test case(s) |
@@ -704,38 +805,36 @@ Scenario: Edit form correctly pre-populates empty Description
 | Open program for editing; form pre-populated | TC-001, TC-027 |
 | Successfully edit program name | TC-002 |
 | Edit preserves unchanged fields | TC-003, TC-014 |
-| *(Extended coverage)* | TC-004–TC-026 |
+| *(Extended coverage)* | TC-004–TC-029 |
 
 ---
 
 ## Ambiguities and Gaps in the Acceptance Criteria
 
-1. **Updated name spelling inconsistency** — The *When* step uses `"Web Development 2026 - Updated"` (space around hyphen) but the original *Then* step showed `"Web Development 2026-Updated"` (no space). Expected display format should be confirmed.
+1. **Field label vs AC wording** — Jira AC uses "Name"; UI label is **Program Name** (Confluence Field Definitions).
 
-2. **Form fields not fully specified** — AC implies **Program Name** and **Description** (from create feature parity) but does not explicitly list field labels on the edit form or modal title (e.g. "Edit Program").
+2. **Edit control UX** — Confluence documents ✏️ icon; live app exposes `Edit {name}` accessible button name (TC-001).
 
-3. **Edit control UX** — AC says "edit icon" only; tooltip, aria-label, keyboard access, and row-click behavior are undefined.
+3. **Description optional on edit** — Not in ACs; confirmed optional — can be cleared (TC-005, TC-027).
 
-4. **Description required or optional on edit?** — AC covers name validation on create but not whether **Description** can be cleared during edit (TC-005 assumes optional, matching create).
+4. **Save button with no changes** — Not in ACs; **Save** is enabled when form opens with valid name (TC-008).
 
-5. **Save button behavior** — No AC for disabled **Save** when **Program Name** is empty, when there are no changes, or during in-flight save.
+5. **Max length** — Confluence specifies Name **100**, Description **500**; client-side not enforced for name (TC-018–TC-020, TC-029).
 
-6. **Dismiss / cancel behavior** — No AC for Cancel, X, Escape, or click-outside; unsaved changes handling is unspecified (TC-007).
+6. **Duplicate names on rename** — Confluence requires server rejection; **app bug** [DS-192](https://legionqaschool.atlassian.net/browse/DS-192) (TC-013).
 
-7. **Max length limits** — No limits stated for **Program Name** or **Description** (TC-018–TC-020 assume 255 / 1000 pending confirmation).
+7. **Case sensitivity** — Confluence implies unique per organization; **app bug** [DS-194](https://legionqaschool.atlassian.net/browse/DS-194) (TC-024).
 
-8. **Duplicate names on rename** — Not mentioned; policy for case sensitivity and trimming is undefined (TC-013, TC-024).
+8. **AI Generation Config** — Not in Jira ACs but present in edit modal (TC-028).
 
-9. **List update behavior** — AC says list updates "immediately" but sort order, search/filter refresh, pagination, and success toast are not specified.
+9. **Editor / Viewer roles** — Confluence: Editor can edit, Viewer read-only; Jira ACs mention admin only (TC-011).
 
-10. **Permissions** — Only admin in positive flows; non-admin and unauthenticated access not defined (TC-011, TC-012).
+10. **List refresh** — Confluence requires immediate list update after mutation; observed after successful edit (TC-002, TC-003).
 
-11. **Error handling** — Network/API failures and double-submit not covered (TC-015, TC-016).
+11. **Modal dismiss** — Cancel, X, Escape documented in Confluence UI Behavior (TC-007).
 
-12. **Security / i18n** — XSS sanitization and Unicode handling not in ACs (TC-022, TC-025).
+12. **Programs as top-level container** — Per Architecture Overview, programs hold semesters, courses, and session templates (Layer 1 curriculum structure).
 
-13. **Concurrent edits** — Two admins editing the same program simultaneously is not addressed (last-write-wins vs conflict error).
+13. **Downstream impact of rename** — Whether renaming affects enrollments, reports, or linked courses is not specified.
 
-14. **Downstream impact** — Whether renaming affects enrollments, reports, URLs, or linked courses is not specified.
-
-15. **Audit / history** — No requirement for change logging or "last updated" metadata.
+14. **Concurrent edits** — Two admins editing the same program simultaneously is not addressed.

@@ -8,8 +8,9 @@ const BASE_URL = process.env.DIDAXIS_URL ?? 'https://test.didaxis.studio';
 const LOGIN_URL = `${BASE_URL}/login`;
 const PROGRAMS_URL = `${BASE_URL}/programs`;
 
-const PROGRAM_NAME_MAX_LENGTH = 255;
-const DESCRIPTION_MAX_LENGTH = 1000;
+/** Confluence: Program Setup — Field Definitions */
+const PROGRAM_NAME_MAX_LENGTH = 100;
+const DESCRIPTION_MAX_LENGTH = 500;
 
 function requireAdminCredentials(): { email: string; password: string } {
   const email = process.env.DIDAXIS_EMAIL;
@@ -107,11 +108,22 @@ async function openEditProgram(page: Page, name: string) {
   await expect(programModal(page).getByRole('heading', { name: 'Edit Program' })).toBeVisible();
 }
 
+async function expandAiGenerationConfig(page: Page) {
+  await programModal(page).getByText('AI Generation Config').click();
+}
+
 async function dismissEditModal(page: Page) {
   const modal = programModal(page);
   const cancelButton = modal.getByRole('button', { name: 'Cancel' });
   if (await cancelButton.isVisible()) {
     await cancelButton.click();
+    await expect(modal).toBeHidden();
+    return;
+  }
+
+  const closeButton = modal.getByRole('banner').getByRole('button');
+  if (await closeButton.isVisible()) {
+    await closeButton.click();
     await expect(modal).toBeHidden();
     return;
   }
@@ -297,8 +309,6 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
   });
 
   test('TC-013 — Renaming a program to an existing program name is rejected', async ({ page }) => {
-    test.fixme(true, 'App currently allows duplicate program names on create/edit (same as DS-1 TC-010)');
-
     const existingName = uniqueName('Web Development 2026');
     const otherName = uniqueName('Mobile Development 2026');
 
@@ -395,7 +405,7 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
 
   test('TC-018 — Program Name at max length is saved correctly on edit', async ({ page }) => {
     const originalName = uniqueName('Max Length Source Program');
-    const suffix = `-${Date.now()}`;
+    const suffix = `-${Date.now()}`.slice(-8);
     const maxName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH - suffix.length) + suffix;
 
     await createProgram(page, originalName, 'Max length edit source');
@@ -409,8 +419,6 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
   });
 
   test('TC-019 — Over-max Program Name cannot be saved on edit', async ({ page }) => {
-    test.fixme(true, 'App accepts 256+ character names with no validation (same as DS-1 TC-015)');
-
     const programName = uniqueName('Web Development 2026');
     const overMaxName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH + 1);
 
@@ -418,25 +426,14 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
     await openEditProgram(page, programName);
 
     await programNameField(page).fill(overMaxName);
+    await expect(programNameField(page)).toHaveValue(overMaxName);
 
-    const actualValue = await programNameField(page).inputValue();
     const save = saveButton(page);
-    const isDisabled = await save.isDisabled();
-    const hasValidationError = await page
-      .getByText(/too long|maximum|max length|character limit/i)
-      .isVisible()
-      .catch(() => false);
+    await expect(save).toBeDisabled();
 
-    expect(
-      actualValue.length <= PROGRAM_NAME_MAX_LENGTH || isDisabled || hasValidationError,
-    ).toBeTruthy();
-
-    if (!isDisabled) {
-      await save.click();
-      await expect(programModal(page)).toBeVisible();
-    }
-
-    await expect(programInList(page, programName)).toBeVisible();
+    await dismissEditModal(page);
+    await expect(programInList(page, programName)).toHaveCount(1);
+    await expect(programInList(page, overMaxName)).toHaveCount(0);
   });
 
   test('TC-020 — Description at max length is saved correctly on edit', async ({ page }) => {
@@ -516,10 +513,10 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
     await programNameField(page).fill(caseVariant);
     await saveButton(page).click();
 
-    // Observed create-flow policy (DS-1): case variants are treated as distinct names.
-    await waitForEditModalClosed(page);
-    await expect(programInList(page, caseVariant)).toHaveCount(1);
+    await expect(duplicateNameError(page)).toBeVisible();
+    await expect(programInList(page, caseVariant)).toHaveCount(0);
     await expect(programInList(page, existingName)).toHaveCount(1);
+    await expect(programInList(page, otherName)).toHaveCount(1);
   });
 
   test('TC-025 — HTML and script content in fields is safely handled on edit', async ({ page }) => {
@@ -545,8 +542,8 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
 
   test('TC-026 — Edit succeeds when Description is empty and Program Name is long', async ({ page }) => {
     const originalName = uniqueName('Long Name Source Program');
-    const suffix = `-${Date.now()}`;
-    const longName = fixedLengthString(200 - suffix.length) + suffix;
+    const suffix = `-${Date.now()}`.slice(-8);
+    const longName = fixedLengthString(99 - suffix.length) + suffix;
 
     await createProgram(page, originalName, 'Short description');
     await openEditProgram(page, originalName);
@@ -567,5 +564,36 @@ test.describe('Didaxis Studio — Edit Existing Program Details', () => {
 
     await expect(programNameField(page)).toHaveValue(programName);
     await expect(descriptionField(page)).toHaveValue('');
+  });
+
+  test('TC-028 — Edit modal exposes AI Generation Config section', async ({ page }) => {
+    const programName = uniqueName('AI Config Edit Program');
+
+    await createProgram(page, programName, 'AI config source');
+    await openEditProgram(page, programName);
+
+    await expect(programModal(page).getByText('AI Generation Config')).toBeVisible();
+    await expandAiGenerationConfig(page);
+
+    await expect(programModal(page).getByRole('textbox', { name: 'Total Program Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Default Session Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Default Exam Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Target Audience' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Focus Areas' })).toBeVisible();
+  });
+
+  test('TC-029 — Description over max length is rejected on edit', async ({ page }) => {
+    const programName = uniqueName('Web Development 2026');
+    const originalDescription = 'Short description';
+    const overMaxDescription = fixedLengthString(DESCRIPTION_MAX_LENGTH + 1);
+
+    await createProgram(page, programName, originalDescription);
+    await openEditProgram(page, programName);
+
+    await descriptionField(page).fill(overMaxDescription);
+    await saveButton(page).click();
+
+    await expect(programModal(page)).toBeVisible();
+    await expect(programDescriptionInList(page, programName)).toHaveText(originalDescription);
   });
 });

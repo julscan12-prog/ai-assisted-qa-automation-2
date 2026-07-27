@@ -8,8 +8,9 @@ const BASE_URL = process.env.DIDAXIS_URL ?? 'https://test.didaxis.studio';
 const LOGIN_URL = `${BASE_URL}/login`;
 const PROGRAMS_URL = `${BASE_URL}/programs`;
 
-const PROGRAM_NAME_MAX_LENGTH = 255;
-const DESCRIPTION_MAX_LENGTH = 1000;
+/** Confluence: Program Setup — Field Definitions */
+const PROGRAM_NAME_MAX_LENGTH = 100;
+const DESCRIPTION_MAX_LENGTH = 500;
 
 function requireAdminCredentials(): { email: string; password: string } {
   const email = process.env.DIDAXIS_EMAIL;
@@ -76,8 +77,16 @@ function programInList(page: Page, name: string): Locator {
   return programRowsByName(page, name);
 }
 
+function programDescriptionInList(page: Page, name: string): Locator {
+  return programInList(page, name).locator('td').first().locator('p').nth(1);
+}
+
 function duplicateNameError(page: Page): Locator {
   return page.getByRole('alert').filter({ hasText: /already exists/i });
+}
+
+async function expandAiGenerationConfig(page: Page) {
+  await programModal(page).getByText('AI Generation Config').click();
 }
 
 async function dismissProgramModal(page: Page) {
@@ -113,12 +122,13 @@ test.describe('Didaxis Studio — Create New Program', () => {
 
   // Positive flows
 
-  test('TC-001 — Program creation form displays Program Name and Description fields', async ({ page }) => {
+  test('TC-001 — Program creation modal displays Program Name and Description fields', async ({ page }) => {
     await openNewProgramModal(page);
 
     await expect(programNameField(page)).toBeVisible();
     await expect(descriptionField(page)).toBeVisible();
     await expect(createButton(page)).toBeVisible();
+    await expect(createButton(page)).toBeDisabled();
     await expect(programModal(page).getByRole('button', { name: 'Cancel' })).toBeVisible();
   });
 
@@ -131,6 +141,7 @@ test.describe('Didaxis Studio — Create New Program', () => {
 
     await expect(programNameField(page)).not.toBeVisible();
     await expect(programInList(page, programName)).toBeVisible();
+    await expect(programDescriptionInList(page, programName)).toHaveText(description);
   });
 
   test('TC-003 — Program is created when Description is left empty', async ({ page }) => {
@@ -166,6 +177,33 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await expect(programInList(page, programName)).not.toBeVisible();
   });
 
+  test('TC-023 — AI Generation Config section is available in create modal', async ({ page }) => {
+    await openNewProgramModal(page);
+
+    await expect(programModal(page).getByText('AI Generation Config')).toBeVisible();
+    await expandAiGenerationConfig(page);
+
+    await expect(programModal(page).getByRole('textbox', { name: 'Total Program Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Default Session Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Default Exam Hours' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Target Audience' })).toBeVisible();
+    await expect(programModal(page).getByRole('textbox', { name: 'Focus Areas' })).toBeVisible();
+  });
+
+  test('TC-024 — Program list displays description preview and row actions', async ({ page }) => {
+    const programName = uniqueName('List Preview Program');
+    const description = 'Description shown in list preview';
+
+    await openNewProgramModal(page);
+    await fillAndCreateProgram(page, programName, description);
+
+    const row = programInList(page, programName);
+    await expect(row).toBeVisible();
+    await expect(programDescriptionInList(page, programName)).toHaveText(description);
+    await expect(page.getByRole('button', { name: `Edit ${programName}`, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Delete ${programName}`, exact: true })).toBeVisible();
+  });
+
   // Negative flows
 
   test('TC-006 — Empty Program Name prevents submission via disabled Create button', async ({ page }) => {
@@ -183,7 +221,7 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await expect(createButton(page)).toBeDisabled();
   });
 
-  test('TC-009 — Logged-out users are redirected or blocked from program creation', async ({ browser }) => {
+  test('TC-009 — Logged-out users are redirected to login', async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -192,14 +230,13 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
     await expect(programNameField(page)).not.toBeVisible();
 
     await context.close();
   });
 
   test('TC-010 — System prevents creating a program with an existing name', async ({ page }) => {
-    test.fixme(true, 'App currently allows duplicate program names (MCP: 2 rows, no error alert)');
-
     const programName = uniqueName('Web Development 2026');
 
     await openNewProgramModal(page);
@@ -213,7 +250,6 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await expect(programInList(page, programName)).toHaveCount(1);
   });
 
-  // Known product bug: double-clicking Create submits twice and creates duplicate rows.
   test('TC-011 — Repeated Create clicks do not create multiple identical programs', async ({ page }) => {
     const programName = uniqueName('Unique Program 2026');
 
@@ -261,11 +297,11 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await fillAndCreateProgram(page, programName, description);
 
     await expect(programNameField(page)).not.toBeVisible();
-    await expect(page.getByRole('row').filter({ hasText: description })).toBeVisible();
+    await expect(programInList(page, programName)).toBeVisible();
   });
 
   test('TC-014 — Program Name at max length is saved correctly', async ({ page }) => {
-    const suffix = `-${Date.now()}`;
+    const suffix = `-${Date.now()}`.slice(-8);
     const programName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH - suffix.length) + suffix;
 
     await openNewProgramModal(page);
@@ -276,8 +312,6 @@ test.describe('Didaxis Studio — Create New Program', () => {
   });
 
   test('TC-015 — Over-max Program Name cannot be submitted', async ({ page }) => {
-    test.fixme(true, 'App accepts 256+ character names with no validation (MCP: 256 chars created)');
-
     const overMaxName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH + 1);
 
     await openNewProgramModal(page);
@@ -309,6 +343,17 @@ test.describe('Didaxis Studio — Create New Program', () => {
 
     await expect(programNameField(page)).not.toBeVisible();
     await expect(programInList(page, programName)).toBeVisible();
+  });
+
+  test('TC-025 — Description over max length is rejected', async ({ page }) => {
+    const programName = uniqueName('Over Max Desc Program');
+    const description = fixedLengthString(DESCRIPTION_MAX_LENGTH + 1);
+
+    await openNewProgramModal(page);
+    await fillAndCreateProgram(page, programName, description);
+
+    await expect(programNameField(page)).toBeVisible();
+    await expect(programInList(page, programName)).toHaveCount(0);
   });
 
   test('TC-017 — Program Name with allowed special characters is saved correctly', async ({ page }) => {
@@ -358,8 +403,8 @@ test.describe('Didaxis Studio — Create New Program', () => {
     await programNameField(page).fill(caseVariant);
     await createButton(page).click();
 
-    // MCP: app treats case variants as distinct names (both entries created).
-    await expect(programInList(page, caseVariant)).toHaveCount(1);
+    await expect(duplicateNameError(page)).toBeVisible();
+    await expect(programInList(page, caseVariant)).toHaveCount(0);
     await expect(programInList(page, programName)).toHaveCount(1);
   });
 
@@ -380,8 +425,8 @@ test.describe('Didaxis Studio — Create New Program', () => {
   });
 
   test('TC-022 — Empty Description with long Program Name succeeds', async ({ page }) => {
-    const suffix = `-${Date.now()}`;
-    const programName = fixedLengthString(200 - suffix.length) + suffix;
+    const suffix = `-${Date.now()}`.slice(-8);
+    const programName = fixedLengthString(99 - suffix.length) + suffix;
 
     await openNewProgramModal(page);
     await programNameField(page).fill(programName);
