@@ -8,7 +8,8 @@ const BASE_URL = process.env.DIDAXIS_URL ?? 'https://test.didaxis.studio';
 const LOGIN_URL = `${BASE_URL}/login`;
 const PROGRAMS_URL = `${BASE_URL}/programs`;
 
-const PROGRAM_NAME_MAX_LENGTH = 255;
+/** Confluence: Program Setup — Field Definitions */
+const PROGRAM_NAME_MAX_LENGTH = 100;
 
 function requireAdminCredentials(): { email: string; password: string } {
   const email = process.env.DIDAXIS_EMAIL;
@@ -181,8 +182,6 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
   });
 
   test('TC-007 — Duplicate Program Name is rejected with a clear error', async ({ page }) => {
-    test.fixme(true, 'App currently allows duplicate program names (MCP: 2 rows, no error alert)');
-
     const programName = uniqueName('Web Development 2026');
 
     await createProgram(page, programName, 'Initial program');
@@ -198,8 +197,6 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
   });
 
   test('TC-008 — Duplicate name does not overwrite the existing program', async ({ page }) => {
-    test.fixme(true, 'App currently allows duplicate program names (MCP: second row created)');
-
     const programName = uniqueName('Web Development 2026');
     const originalDescription = 'Full-stack web development program';
 
@@ -215,10 +212,7 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
     await expect(programDescriptionInList(page, programName)).toHaveText(originalDescription);
   });
 
-  // Known product bug: double-clicking Create submits twice and creates duplicate rows.
   test('TC-009 — Repeated Create clicks do not create multiple programs with the same name', async ({ page }) => {
-    test.fixme(true, 'App creates 2 rows on double Create click (MCP: doubleSubmitCount=2)');
-
     const programName = uniqueName('Unique Program 2026');
 
     await openNewProgramModal(page);
@@ -261,8 +255,6 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
   });
 
   test('TC-013 — Duplicate is detected when new name matches existing name after trim', async ({ page }) => {
-    test.fixme(true, 'App currently allows duplicate program names after trim (MCP: padded dup creates 2nd row)');
-
     const programName = uniqueName('Web Development 2026');
 
     await createProgram(page, programName, 'Existing program');
@@ -290,7 +282,7 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
   });
 
   test('TC-015 — Program Name at maximum length is accepted', async ({ page }) => {
-    const suffix = `-${Date.now()}`;
+    const suffix = `-${Date.now()}`.slice(-8);
     const programName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH - suffix.length) + suffix;
 
     await openNewProgramModal(page);
@@ -303,31 +295,16 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
   });
 
   test('TC-016 — Program Name exceeding maximum length is rejected', async ({ page }) => {
-    test.fixme(true, 'App accepts 256+ character names with no maxlength or validation (MCP: Create enabled)');
-
     const overMaxName = fixedLengthString(PROGRAM_NAME_MAX_LENGTH + 1);
 
     await openNewProgramModal(page);
     await programNameField(page).fill(overMaxName);
+    await expect(programNameField(page)).toHaveValue(overMaxName);
 
-    const actualValue = await programNameField(page).inputValue();
     const create = createButton(page);
-    const isDisabled = await create.isDisabled();
-    const hasValidationError = await page
-      .getByText(/too long|maximum|max length|character limit/i)
-      .isVisible()
-      .catch(() => false);
+    await expect(create).toBeDisabled();
 
-    expect(
-      actualValue.length <= PROGRAM_NAME_MAX_LENGTH || isDisabled || hasValidationError,
-    ).toBeTruthy();
-
-    if (!isDisabled) {
-      await create.click();
-      await expect(programModal(page)).toBeVisible();
-    }
-
-    await expect(programRowsByName(page, actualValue)).toHaveCount(0);
+    await expect(programRowsByName(page, overMaxName)).toHaveCount(0);
   });
 
   test('TC-017 — Unicode and emoji in Program Name are preserved', async ({ page }) => {
@@ -345,7 +322,7 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
     await expect(row.locator('td p').first()).toHaveText(programName);
   });
 
-  test('TC-018 — Case-variant duplicate name policy is applied consistently', async ({ page }) => {
+  test('TC-018 — Case-variant duplicate name is rejected', async ({ page }) => {
     const programName = uniqueName('Web Development 2026');
     const caseVariant = programName.replace('Web', 'web');
 
@@ -355,10 +332,9 @@ test.describe('Didaxis Studio — Program Name Validation and Duplicate Preventi
     await programNameField(page).fill(caseVariant);
     await createButton(page).click();
 
-    // Observed create-flow policy: case variants are treated as distinct names.
-    await waitForCreateModalClosed(page);
+    await expect(duplicateNameError(page)).toBeVisible();
+    await expect(programInList(page, caseVariant)).toHaveCount(0);
     await expect(programInList(page, programName)).toHaveCount(1);
-    await expect(programInList(page, caseVariant)).toHaveCount(1);
   });
 
   test('TC-019 — HTML/script content in Program Name does not execute or break the UI', async ({ page }) => {

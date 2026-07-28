@@ -1,8 +1,53 @@
 # DS-3 — Program Name Validation and Duplicate Prevention (Test Plan Output)
 
+**Jira:** [DS-3](https://legionqaschool.atlassian.net/browse/DS-3) — *Program name validation and duplicate prevention*  
 **Feature:** Program name validation and duplicate prevention  
-**Scope:** Admin user — Programs page → "+ New Program" → creation form  
-**Source:** DS-3_ticket_INPUT
+**Scope:** Admin user — Programs page (`/programs`) → "+ New Program" → creation modal  
+**Sources:** DS-3 Jira ACs, Confluence (Program Setup — Validation Rules, Field Definitions, UI Behavior), live app exploration (Playwright headless)
+
+---
+
+## Jira Acceptance Criteria (Source)
+
+```gherkin
+Scenario: Reject program name with only whitespace
+  Given I am on the program creation form
+  When I enter "   " as the program name
+  And I click Create
+  Then the form is not submitted (name is trimmed, treated as empty)
+
+Scenario: Accept program name with special characters
+  Given I am on the program creation form
+  When I enter "Informatique & IA - Niveau 2" as the program name
+  And I fill other required fields
+  And I click Create
+  Then the program is created successfully
+
+Scenario: Reject duplicate program name
+  Given a program "Web Development 2026" already exists
+  When I try to create a new program with the same name
+  Then I see an error indicating the name already exists
+```
+
+---
+
+## Observed App Behavior (Live Exploration)
+
+| Area | Confluence / Jira expectation | Observed on https://test.didaxis.studio |
+|------|------------------------------|----------------------------------------|
+| Login | Admin access required | `Email`, `Password`, `Sign In` on `/login`; dotenv `DIDAXIS_EMAIL` / `DIDAXIS_PASSWORD` |
+| Create modal | Program Name + Description | Dialog **New Program**; `Program Name`, `Description`; **Create** / **Cancel** |
+| Whitespace-only name | Trim → empty → form not submitted | **Create** disabled when name is `   ` (TC-005 passes) |
+| Special characters | `Informatique & IA - Niveau 2` accepted | Created with exact name preserved (TC-001 passes) |
+| Empty name | Create disabled | Confirmed (TC-006 passes) |
+| Name trim | Trim before save/duplicate check | `"  Mobile Development 2026  "` stored as trimmed (TC-012 passes) |
+| Duplicate name | 400/409 + error alert | **Bug [DS-195](https://legionqaschool.atlassian.net/browse/DS-195)** / [DS-196](https://legionqaschool.atlassian.net/browse/DS-196) / [DS-197](https://legionqaschool.atlassian.net/browse/DS-197) — second row created, no alert (TC-007, TC-008, TC-013) |
+| Padded duplicate | Trim then reject duplicate | **Bug [DS-197](https://legionqaschool.atlassian.net/browse/DS-197)** — padded duplicate creates 2nd row |
+| Double submit | One program per name | **Bug [DS-198](https://legionqaschool.atlassian.net/browse/DS-198)** — double Create creates two rows (TC-009) |
+| Max length | Name max **100** (Confluence) | **Bug [DS-199](https://legionqaschool.atlassian.net/browse/DS-199)** — 101+ chars accepted (TC-016) |
+| Case sensitivity | Unique per organization | **Bug [DS-200](https://legionqaschool.atlassian.net/browse/DS-200)** — case variants allowed (TC-018) |
+| Tabs/newlines only | Treated as empty | Tabs keep Create disabled; newlines stripped in single-line field (TC-011 passes) |
+| Unicode/emoji/XSS | Safely stored/displayed | Accepted without script execution (TC-017, TC-019 pass) |
 
 ---
 
@@ -177,7 +222,8 @@ Scenario: Empty Program Name is rejected
 ### TC-007 — Duplicate Program Name is rejected with a clear error
 
 **Preconditions:** User is logged in as admin; program **Web Development 2026** already exists  
-**Priority:** High
+**Priority:** High  
+**Jira bug:** [DS-195](https://legionqaschool.atlassian.net/browse/DS-195)
 
 **Steps:**
 1. Open the program creation form.
@@ -205,7 +251,8 @@ Scenario: Reject duplicate program name
 ### TC-008 — Duplicate name does not overwrite the existing program
 
 **Preconditions:** Program **Web Development 2026** exists with Description **Full-stack web development program**  
-**Priority:** High
+**Priority:** High  
+**Jira bug:** [DS-196](https://legionqaschool.atlassian.net/browse/DS-196)
 
 **Steps:**
 1. Open the program creation form.
@@ -233,7 +280,8 @@ Scenario: Duplicate create does not modify existing program
 ### TC-009 — Repeated Create clicks do not create multiple programs with the same name
 
 **Preconditions:** User is on the program creation form; **Unique Program 2026** does not exist  
-**Priority:** Medium
+**Priority:** Medium  
+**Jira bug:** [DS-198](https://legionqaschool.atlassian.net/browse/DS-198)
 
 **Steps:**
 1. Enter `Unique Program 2026` in **Program Name**.
@@ -335,11 +383,8 @@ Scenario: Leading and trailing spaces in Program Name are trimmed
 ### TC-013 — Duplicate is detected when new name matches existing name after trim
 
 **Preconditions:** Program **Web Development 2026** already exists  
-**Priority:** High
-
-**Steps:**
-1. Open the program creation form.
-2. Enter `  Web Development 2026  ` in **Program Name**.
+**Priority:** High  
+**Jira bug:** [DS-197](https://legionqaschool.atlassian.net/browse/DS-197)
 3. Click **Create**.
 
 **Expected result:** Treated as duplicate of **Web Development 2026**. Error shown. No second program created.
@@ -385,13 +430,13 @@ Scenario: Single-character Program Name is accepted
 
 ---
 
-### TC-015 — Program Name at maximum length is accepted
+### TC-015 — Program Name at maximum length (100) is accepted
 
-**Preconditions:** Maximum **Program Name** length is 255 characters; user is on the creation form  
+**Preconditions:** Maximum **Program Name** length is 100 characters per Confluence; user is on the creation form  
 **Priority:** Medium
 
 **Steps:**
-1. Enter a 255-character string in **Program Name** (e.g. `Cybersecurity Advanced Track 2026` padded to 255 chars).
+1. Enter a 100-character string in **Program Name**.
 2. Enter `Max length boundary test` in **Description**.
 3. Click **Create**.
 
@@ -402,34 +447,35 @@ Scenario: Single-character Program Name is accepted
 Scenario: Program Name at maximum length is accepted
   Given I am logged in as admin
   And I am on the program creation form
-  And the maximum Program Name length is 255 characters
-  When I fill in Program Name with a 255-character string
+  And the maximum Program Name length is 100 characters
+  When I fill in Program Name with a 100-character string
   And I fill in Description with "Max length boundary test"
   And I click Create
   Then the modal closes
-  And the program list shows the program with the full 255-character name
+  And the program list shows the program with the full 100-character name
 ```
 
 ---
 
-### TC-016 — Program Name exceeding maximum length is rejected
+### TC-016 — Program Name exceeding maximum length (101) is rejected
 
-**Preconditions:** Maximum **Program Name** length is 255 characters  
-**Priority:** Medium
+**Preconditions:** Maximum **Program Name** length is 100 characters per Confluence  
+**Priority:** Medium  
+**Jira bug:** [DS-199](https://legionqaschool.atlassian.net/browse/DS-199)
 
 **Steps:**
-1. Enter a 256-character string in **Program Name**.
+1. Enter a 101-character string in **Program Name**.
 2. Attempt to click **Create**.
 
-**Expected result:** **Create** is disabled or validation error is shown. No program is created.
+**Expected result:** **Create** is disabled or validation error is shown. No program is created. **Observed:** 101+ char names accepted — document as product gap.
 
 **Gherkin:**
 ```gherkin
 Scenario: Program Name over maximum length is rejected
   Given I am logged in as admin
   And I am on the program creation form
-  And the maximum Program Name length is 255 characters
-  When I fill in Program Name with a 256-character string
+  And the maximum Program Name length is 100 characters
+  When I fill in Program Name with a 101-character string
   Then the Create button is disabled or I see a validation error
   And no program is created
 ```
@@ -463,27 +509,29 @@ Scenario: Unicode and emoji in Program Name are accepted
 
 ---
 
-### TC-018 — Case-variant duplicate name policy is applied consistently
+### TC-018 — Case-variant duplicate name is rejected
 
 **Preconditions:** Program **Web Development 2026** already exists  
-**Priority:** Medium
+**Priority:** Medium  
+**Jira bug:** [DS-200](https://legionqaschool.atlassian.net/browse/DS-200)
 
 **Steps:**
 1. Open the program creation form.
-2. Enter `web development 2026` in **Program Name**.
+2. Enter `web development 2026` in **Program Name** (case variant of existing name).
 3. Click **Create**.
 
-**Expected result:** Behavior matches product rule: either rejected as duplicate or allowed as a distinct name — must be consistent and documented.
+**Expected result (Confluence):** Rejected as duplicate with error alert. **Observed:** Allowed as separate program — document as product gap.
 
 **Gherkin:**
 ```gherkin
-Scenario: Case-variant program name duplicate policy
+Scenario: Case-variant program name is rejected as duplicate
   Given I am logged in as admin
   And a program "Web Development 2026" already exists
   And I am on the program creation form
   When I fill in Program Name with "web development 2026"
   And I click Create
-  Then the system applies the defined duplicate-name policy consistently
+  Then I see an error indicating the name already exists
+  And the program list contains only one "Web Development 2026"
 ```
 
 ---
@@ -558,22 +606,22 @@ Scenario: Valid name after correcting whitespace-only input
 
 2. **Exact duplicate error message** — AC says "an error indicating the name already exists" but does not define copy, placement (inline field error vs. toast vs. banner), or whether the modal stays open.
 
-3. **Case sensitivity for duplicates** — Not specified. Is `web development 2026` a duplicate of **Web Development 2026**? TC-018 flags this for product decision.
+3. **Case sensitivity for duplicates** — Confluence requires unique per organization; case variants should be rejected (TC-018, bug DS-190).
 
-4. **Trim behavior** — AC implies trim for whitespace-only names but does not state whether leading/trailing spaces on valid names are trimmed before save (TC-012, TC-013).
+4. **Trim behavior** — Confirmed: leading/trailing spaces trimmed before save; padded duplicates should still be rejected (TC-012, TC-013).
 
-5. **Maximum Program Name length** — Not defined. TC-015 and TC-016 assume 255 characters pending confirmation.
+5. **Maximum Program Name length** — Confluence specifies **100** characters (TC-015, TC-016; bug DS-191 for over-max).
 
 6. **Minimum Program Name length** — Not defined. TC-014 assumes single character is valid unless product says otherwise.
 
-7. **Allowed special characters** — AC validates `&` and `-` but does not define a full allowlist or whether characters like `/`, `\`, `"`, `'`, or `:` are permitted or rejected.
+7. **Allowed special characters** — AC validates `&` and `-`; extended set covered in TC-003.
 
-8. **Duplicate scope** — Unclear whether uniqueness is global, per organization/tenant, or per academic year/cohort.
+8. **Duplicate scope** — Unique per organization per Confluence Field Definitions.
 
 9. **Concurrent duplicate creation** — Two admins creating the same name simultaneously is not covered; race-condition handling is undefined.
 
-10. **Edit flow interaction** — ACs cover creation only. Duplicate and validation rules on edit/rename (DS-2) are out of scope but should align with create behavior.
+10. **Edit flow interaction** — DS-3 ACs cover creation only; edit/rename rules are in DS-2 and should align.
 
-11. **"Other required fields"** — AC mentions filling other required fields for the special-character scenario but only **Program Name** and optional **Description** are known; any additional required fields are unspecified.
+11. **"Other required fields"** — Only **Program Name** is required; **Description** is optional (TC-004).
 
-12. **Validation UX for empty name** — Related create ACs (DS-1) use disabled **Create** for empty names; this feature AC focuses on whitespace-on-submit — consistency between empty vs. whitespace-only UX is not stated.
+12. **Validation UX for empty name** — Create disabled for empty and whitespace-only names (TC-005, TC-006); consistent with Confluence UI Behavior.
